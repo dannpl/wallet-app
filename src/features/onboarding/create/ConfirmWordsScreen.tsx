@@ -19,16 +19,16 @@ type Props = {
   onForgotWords?: () => void
   mnemonic: string[]
 }
-
-const ConfirmWordsScreen: React.FC<Props> = ({
+const ConfirmWordsScreen = ({
   title,
   onComplete,
   onForgotWords,
   mnemonic,
-}) => {
+}: Props) => {
   const [step, setStep] = useState(0)
-  const [selectedWord, setSelectedWord] = useState<string | null>(null)
-  const [challengeWords, setChallengeWords] = useState<string[]>([])
+  const [word, setWord] = useState<string | null>(null)
+  const [correct, setCorrect] = useState(false)
+  const [challengeWords, setChallengeWords] = useState<Array<string>>([])
   const { t } = useTranslation()
   const { triggerNotification } = useHaptic()
   const navigation = useNavigation<CreateAccountNavigationProp>()
@@ -40,62 +40,55 @@ const ConfirmWordsScreen: React.FC<Props> = ({
     [mnemonic],
   )
 
-  const isCorrectWord = useMemo(
-    () => selectedWord === findTargetWord(step),
-    [findTargetWord, selectedWord, step],
-  )
-
   const nextStep = useCallback(() => {
-    const mnemonicLength = mnemonic.length || 12
-
-    if (step === mnemonicLength - 1) {
-      onComplete()
-
-      return
-    }
-
-    const currentStep = step + 1
-    setStep(currentStep)
-    setSelectedWord(null)
-    animateTransition('AccountEnterPassphraseScreen.NextStep')
-    setChallengeWords(
-      Account.generateChallengeWords(findTargetWord(currentStep)),
-    )
+    setTimeout(() => {
+      const mnemonicLength = mnemonic.length || 12
+      if (step === mnemonicLength - 1) {
+        onComplete()
+      } else {
+        setStep(step + 1)
+        setWord(null)
+        animateTransition('AccountEnterPassphraseScreen.NextStep')
+        setChallengeWords(
+          Account.generateChallengeWords(findTargetWord(step + 1)),
+        )
+      }
+    }, 1000)
   }, [findTargetWord, mnemonic.length, onComplete, step])
 
   const onPressWord = useCallback(
-    async (word: string) => {
-      setSelectedWord(word)
+    async (w: string) => {
+      setWord(w)
 
-      if (word === findTargetWord(step)) {
+      if (w === findTargetWord(step)) {
+        setCorrect(true)
         triggerNotification()
-        await sleep(1000)
         nextStep()
-
-        return
+      } else {
+        setCorrect(false)
+        triggerNotification('error')
+        await sleep(1000)
+        setWord(null)
+        setChallengeWords(Account.generateChallengeWords(findTargetWord(step)))
       }
-
-      triggerNotification('error')
-      await sleep(1000)
-      setSelectedWord(null)
-      setChallengeWords(Account.generateChallengeWords(findTargetWord(step)))
     },
     [findTargetWord, nextStep, step, triggerNotification],
   )
 
   const resetState = useCallback(async () => {
     setStep(0)
-    setSelectedWord(null)
-    setChallengeWords(Account.generateChallengeWords(findTargetWord(0)))
-  }, [findTargetWord])
+    setWord(null)
+    setCorrect(false)
+    setChallengeWords(Account.generateChallengeWords(findTargetWord(step)))
+  }, [findTargetWord, step])
 
   useEffect(() => {
     resetState()
-
-    const unsubscribeFocus = navigation.addListener('blur', resetState)
-
-    return unsubscribeFocus
-  }, [navigation]) // eslint-disable-line react-hooks/exhaustive-deps
+    return navigation.addListener('blur', () => {
+      resetState()
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigation])
 
   const onSkip = useCallback(() => {
     if (__DEV__) {
@@ -103,36 +96,33 @@ const ConfirmWordsScreen: React.FC<Props> = ({
     }
   }, [onComplete])
 
-  const onClose = useCallback(() => {
-    if (!navigation.canGoBack()) return
-
-    navigation.goBack()
-  }, [navigation])
-
   const onPressForgot = useCallback(() => {
     if (onForgotWords) {
       onForgotWords()
-      return
+    } else {
+      navigation.goBack()
     }
-
-    onClose()
-  }, [onClose, onForgotWords])
+  }, [navigation, onForgotWords])
 
   const challengeWordChips = useMemo(
     () =>
-      challengeWords.map((word) => (
+      challengeWords.map((w) => (
         <PhraseChip
           marginRight="s"
           marginBottom="s"
-          key={word}
-          title={word}
-          fail={selectedWord === word && !isCorrectWord}
-          success={selectedWord === word && isCorrectWord}
-          onPress={() => !selectedWord && onPressWord(word)}
+          key={w}
+          title={w}
+          fail={word === w && !correct}
+          success={word === w && correct}
+          onPress={() => !word && onPressWord(w)}
         />
       )),
-    [challengeWords, isCorrectWord, onPressWord, selectedWord],
+    [challengeWords, correct, onPressWord, word],
   )
+
+  const onClose = useCallback(() => {
+    navigation.goBack()
+  }, [navigation])
 
   return (
     <SafeAreaBox
